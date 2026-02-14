@@ -14,9 +14,10 @@ jobs:
 
       - name: Checkout repo
         uses: actions/checkout@v4
-      - run: echo "GitHub Actions is working!"
       - run: ls
-      - run: cat bill
+      - run: cat billsplit.py
+      - run: echo "GitHub Actions is working!"
+
 
       - name: Print environment info
         run: |
