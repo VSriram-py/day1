@@ -1,0 +1,93 @@
+name: Sequential Output Workflow
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+
+  # ---------------- JOB 1 ----------------
+  job1:
+    name: Generate Build Metadata
+    runs-on: ubuntu-latest
+
+    outputs:
+      build_id: ${{ steps.generate.outputs.build_id }}
+      checksum: ${{ steps.generate.outputs.checksum }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Simulate heavy computation (25s)
+        run: |
+          echo "Generating build metadata..."
+          for i in {1..5}; do
+            echo "Processing chunk $i..."
+            sleep 5
+          done
+
+      - name: Generate outputs
+        id: generate
+        run: |
+          BUILD_ID=$(date +%s)
+          CHECKSUM=$(echo "$BUILD_ID-super-secret" | sha256sum | cut -d ' ' -f1)
+
+          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+          echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
+
+          echo "Build ID: $BUILD_ID"
+          echo "Checksum: $CHECKSUM"
+
+
+  # ---------------- JOB 2 ----------------
+  job2:
+    name: Process Build Metadata
+    runs-on: ubuntu-latest
+    needs: job1
+
+    outputs:
+      artifact_tag: ${{ steps.process.outputs.artifact_tag }}
+
+    steps:
+      - name: Simulate processing (25s)
+        run: |
+          echo "Received build id: ${{ needs.job1.outputs.build_id }}"
+          echo "Validating checksum: ${{ needs.job1.outputs.checksum }}"
+          for i in {1..5}; do
+            echo "Validating part $i..."
+            sleep 5
+          done
+
+      - name: Create artifact tag
+        id: process
+        run: |
+          TAG="artifact-${{ needs.job1.outputs.build_id }}-$(echo ${{ needs.job1.outputs.checksum }} | cut -c1-8)"
+
+          echo "artifact_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+
+  # ---------------- JOB 3 ----------------
+  job3:
+    name: Final Packaging
+    runs-on: ubuntu-latest
+    needs: [job1, job2]
+
+    steps:
+      - name: Simulate packaging (30s)
+        run: |
+          echo "Using Build ID: ${{ needs.job1.outputs.build_id }}"
+          echo "Using Checksum: ${{ needs.job1.outputs.checksum }}"
+          echo "Using Artifact Tag: ${{ needs.job2.outputs.artifact_tag }}"
+
+          for i in {1..6}; do
+            echo "Packaging layer $i..."
+            sleep 5
+          done
+
+      - name: Final result
+        run: |
+          echo "Final package created:"
+          echo "PACKAGE-${{ needs.job2.outputs.artifact_tag }}"
