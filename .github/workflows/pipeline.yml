@@ -1,0 +1,75 @@
+name: Enterprise CI/CD Pipeline
+
+on:
+  push: {}
+  pull_request: {}
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (stage, beta, production)'
+        required: false
+        default: 'stage'
+
+jobs:
+
+  build-test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: demo-app
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install
+      run: npm install
+
+    - name: Load Environment
+      run: bash scripts/load-env.sh
+
+    - name: Test
+      run: npm run test
+
+    - name: Build
+      run: npm run build
+
+  deploy-stage:
+    needs: build-test
+    runs-on: ubuntu-latest
+    environment: stage
+    if: |
+      (github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'stage' || github.event.inputs.environment == ''))
+
+    steps:
+    - uses: actions/checkout@v4
+    - run: echo "Deploying to STAGE"
+
+  deploy-beta:
+    needs: build-test
+    runs-on: ubuntu-latest
+    environment: beta
+    if: |
+      (github.ref == 'refs/heads/release') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'beta')
+
+    steps:
+    - uses: actions/checkout@v4
+    - run: echo "Deploying to BETA"
+
+  deploy-production:
+    needs: build-test
+    runs-on: ubuntu-latest
+    environment: production
+    if: |
+      (github.ref == 'refs/heads/prod') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+
+    steps:
+    - uses: actions/checkout@v4
+    - run: echo "Deploying to PRODUCTION"
