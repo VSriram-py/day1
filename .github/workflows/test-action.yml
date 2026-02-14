@@ -14,9 +14,12 @@ jobs:
 
       - name: Checkout repo
         uses: actions/checkout@v4
-      - run: ls
-      - run: cat pyscripts/billsplit.py
-      - run: echo "GitHub Actions is working!"
+        
+      - name: Check Py file
+      - run: |
+          ls
+          cat pyscripts/billsplit.py
+          echo "GitHub Actions is working!"
 
 
       - name: Print environment info
