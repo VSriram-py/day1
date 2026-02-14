@@ -1,0 +1,36 @@
+name: Basic CI Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  hello-test:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+      - run: echo "GitHub Actions is working!"
+      
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Print environment info
+        run: |
+          echo "Hello from GitHub Actions!"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Branch: $GITHUB_REF"
+          echo "Commit: $GITHUB_SHA"
+
+      - name: Run simple test
+        run: |
+          echo "Running a fake test..."
+          if [ 2 -eq 2 ]; then
+            echo "Test passed!"
+          else
+            echo "Test failed!"
+            exit 1
+          fi
