@@ -1,0 +1,716 @@
+# =============================================================================
+# COMPREHENSIVE GITHUB ACTIONS WORKFLOW DEMO
+# =============================================================================
+# This workflow demonstrates key GitHub Actions features and best practices
+# for beginners. It covers multi-OS builds, job dependencies, concurrency
+# controls, matrix strategies, conditionals, and more.
+#
+# Author: GitHub Actions Demo
+# Purpose: Educational example showcasing GitHub Actions capabilities
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# WORKFLOW NAME
+# -----------------------------------------------------------------------------
+# The name appears in the Actions tab and in status badges
+name: Comprehensive Multi-OS CI/CD Demo
+
+# -----------------------------------------------------------------------------
+# WORKFLOW TRIGGERS
+# -----------------------------------------------------------------------------
+# This section defines when the workflow will run
+on:
+  # Trigger on push events to specific branches
+  push:
+    branches:
+      - main              # Run on pushes to main branch
+      - develop           # Run on pushes to develop branch
+      - 'feature/**'      # Run on any feature branch (e.g., feature/new-ui)
+  
+  # Trigger on pull requests targeting specific branches
+  pull_request:
+    branches:
+      - main
+      - develop
+  
+  # Allow manual triggering from the Actions tab
+  # This is useful for testing and on-demand runs
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Enable debug mode'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+# -----------------------------------------------------------------------------
+# CONCURRENCY CONTROL
+# -----------------------------------------------------------------------------
+# Limits how many instances of this workflow can run simultaneously
+# This prevents resource exhaustion and reduces unnecessary runs
+concurrency:
+  # Group name: workflows with the same group will queue
+  # ${{ github.workflow }} = workflow name
+  # ${{ github.ref }} = branch or tag reference
+  group: ${{ github.workflow }}-${{ github.ref }}
+  
+  # Cancel in-progress runs when a new one is triggered
+  # Useful for pull requests where new commits make old runs obsolete
+  cancel-in-progress: true
+
+# -----------------------------------------------------------------------------
+# ENVIRONMENT VARIABLES
+# -----------------------------------------------------------------------------
+# Global environment variables available to all jobs and steps
+env:
+  # Application configuration
+  APP_NAME: "DemoApplication"
+  BUILD_CONFIGURATION: "Release"
+  
+  # Version information
+  VERSION_MAJOR: "1"
+  VERSION_MINOR: "0"
+  VERSION_PATCH: "0"
+  
+  # Maximum number of parallel jobs (used in matrix strategy)
+  MAX_PARALLEL_JOBS: 2
+
+# -----------------------------------------------------------------------------
+# JOBS SECTION
+# -----------------------------------------------------------------------------
+# This workflow contains multiple jobs that demonstrate various features
+
+jobs:
+  # ===========================================================================
+  # JOB 1: PRE-BUILD VALIDATION
+  # ===========================================================================
+  # This job runs first and validates the codebase before building
+  # It demonstrates: basic job setup, conditionals, and outputs
+  
+  pre-build-validation:
+    name: "Pre-Build Validation and Setup"
+    
+    # Specify the runner (GitHub-hosted Ubuntu machine)
+    # Available runners: ubuntu-latest, windows-latest, macos-latest
+    runs-on: ubuntu-latest
+    
+    # Only run on specific branches (additional filter beyond workflow triggers)
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/feature/')
+    
+    # Job outputs that other jobs can access
+    # Format: outputs.<output_name>
+    outputs:
+      should-build: ${{ steps.check-changes.outputs.should-build }}
+      build-timestamp: ${{ steps.set-timestamp.outputs.timestamp }}
+      full-version: ${{ steps.set-version.outputs.version }}
+    
+    steps:
+      # Step 1: Checkout the repository code
+      # This is required for almost all workflows
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch all history for accurate versioning
+          fetch-depth: 0
+      
+      # Step 2: Display environment information
+      - name: Display Environment Info
+        run: |
+          echo "=== Workflow Information ==="
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Event: ${{ github.event_name }}"
+          echo ""
+          echo "=== Runner Information ==="
+          echo "OS: ${{ runner.os }}"
+          echo "Architecture: ${{ runner.arch }}"
+          echo "Runner: ${{ runner.name }}"
+      
+      # Step 3: Check if we should proceed with build
+      # This demonstrates conditional logic and setting outputs
+      - name: Check for Changes
+        id: check-changes
+        run: |
+          # In a real workflow, you might check specific file changes
+          # For this demo, we'll always proceed
+          echo "should-build=true" >> $GITHUB_OUTPUT
+          echo "✅ Changes detected - build will proceed"
+      
+      # Step 4: Set build timestamp
+      - name: Set Build Timestamp
+        id: set-timestamp
+        run: |
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "📅 Build timestamp: $TIMESTAMP"
+      
+      # Step 5: Generate version number
+      - name: Generate Version Number
+        id: set-version
+        run: |
+          # Combine environment variables to create full version
+          FULL_VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+          echo "version=$FULL_VERSION" >> $GITHUB_OUTPUT
+          echo "🏷️  Version: $FULL_VERSION"
+      
+      # Step 6: Validate repository structure
+      - name: Validate Repository Structure
+        run: |
+          echo "🔍 Validating repository structure..."
+          
+          # Check for required files (example)
+          files_to_check=("README.md" ".gitignore")
+          
+          for file in "${files_to_check[@]}"; do
+            if [ -f "$file" ]; then
+              echo "✅ Found: $file"
+            else
+              echo "⚠️  Missing: $file"
+            fi
+          done
+          
+          echo "✅ Validation complete"
+
+  # ===========================================================================
+  # JOB 2: LINUX BUILD AND TEST (MATRIX STRATEGY)
+  # ===========================================================================
+  # Demonstrates: matrix strategy, job dependencies, and architecture targeting
+  
+  build-linux:
+    name: "Build on Linux (${{ matrix.config.arch }})"
+    
+    # This job depends on pre-build-validation completing successfully
+    needs: pre-build-validation
+    
+    # Only run if pre-build validation says we should build
+    if: needs.pre-build-validation.outputs.should-build == 'true'
+    
+    # Use Ubuntu runner - GitHub provides x86_64 architecture by default
+    runs-on: ubuntu-latest
+    
+    # MATRIX STRATEGY
+    # Runs this job multiple times with different configurations
+    # However, we limit it to x86_64 architecture only
+    strategy:
+      # Set to 'false' to continue other matrix jobs even if one fails
+      # Set to 'true' to stop all jobs if any fails
+      fail-fast: true
+      
+      # Maximum number of jobs to run in parallel
+      max-parallel: 2
+      
+      # Matrix configurations
+      matrix:
+        config:
+          # In a real scenario with cross-compilation, you might have:
+          # - { arch: "x86_64", compiler: "gcc" }
+          # - { arch: "aarch64", compiler: "gcc" }
+          # For this demo on GitHub-hosted runners, we'll use x86_64 only
+          - { arch: "x86_64", compiler: "gcc-11" }
+          - { arch: "x86_64", compiler: "clang-14" }
+    
+    # Job-level environment variables
+    env:
+      ARCH: ${{ matrix.config.arch }}
+      COMPILER: ${{ matrix.config.compiler }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Step: Display matrix configuration
+      - name: Display Build Configuration
+        run: |
+          echo "=== Build Configuration ==="
+          echo "Architecture: ${{ matrix.config.arch }}"
+          echo "Compiler: ${{ matrix.config.compiler }}"
+          echo "Version: ${{ needs.pre-build-validation.outputs.full-version }}"
+          echo "Timestamp: ${{ needs.pre-build-validation.outputs.build-timestamp }}"
+      
+      # Step: Verify architecture
+      - name: Verify Architecture
+        run: |
+          echo "🔍 Verifying runner architecture..."
+          ACTUAL_ARCH=$(uname -m)
+          echo "Runner architecture: $ACTUAL_ARCH"
+          
+          # Ensure we're running on x86_64
+          if [ "$ACTUAL_ARCH" != "x86_64" ]; then
+            echo "❌ ERROR: Expected x86_64, got $ACTUAL_ARCH"
+            exit 1
+          fi
+          echo "✅ Architecture verified: x86_64"
+      
+      # Step: Install dependencies
+      - name: Install Build Dependencies
+        run: |
+          echo "📦 Installing build dependencies..."
+          sudo apt-get update
+          
+          # Install the specified compiler
+          if [[ "${{ matrix.config.compiler }}" == gcc* ]]; then
+            sudo apt-get install -y build-essential
+          elif [[ "${{ matrix.config.compiler }}" == clang* ]]; then
+            sudo apt-get install -y clang
+          fi
+          
+          echo "✅ Dependencies installed"
+      
+      # Step: Compile code (simulated)
+      - name: Compile Application
+        run: |
+          echo "🔨 Compiling application..."
+          echo "Compiler: ${{ matrix.config.compiler }}"
+          
+          # Simulate compilation
+          mkdir -p build
+          echo "Binary compiled successfully" > build/app-linux-${{ matrix.config.arch }}
+          
+          echo "✅ Compilation complete"
+      
+      # Step: Run tests
+      - name: Run Unit Tests
+        run: |
+          echo "🧪 Running unit tests..."
+          
+          # Simulate test execution
+          echo "Test 1: PASSED ✅"
+          echo "Test 2: PASSED ✅"
+          echo "Test 3: PASSED ✅"
+          
+          echo "✅ All tests passed"
+      
+      # Step: Upload build artifacts
+      # Artifacts persist after the workflow completes
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build-${{ matrix.config.arch }}-${{ matrix.config.compiler }}
+          path: build/
+          retention-days: 7  # Keep artifacts for 7 days
+
+  # ===========================================================================
+  # JOB 3: WINDOWS BUILD AND TEST
+  # ===========================================================================
+  # Demonstrates: Windows-specific configuration and PowerShell usage
+  
+  build-windows:
+    name: "Build on Windows (x86_64)"
+    
+    # Depends on successful pre-build validation
+    needs: pre-build-validation
+    if: needs.pre-build-validation.outputs.should-build == 'true'
+    
+    # Use Windows runner (x86_64 architecture by default)
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Step: Display Windows environment
+      - name: Display Windows Environment
+        shell: powershell
+        run: |
+          Write-Host "=== Windows Environment ===" -ForegroundColor Cyan
+          Write-Host "OS: $($env:OS)"
+          Write-Host "Processor Architecture: $($env:PROCESSOR_ARCHITECTURE)"
+          Write-Host "Number of Processors: $($env:NUMBER_OF_PROCESSORS)"
+          Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)"
+      
+      # Step: Verify x86_64 architecture
+      - name: Verify Architecture
+        shell: powershell
+        run: |
+          Write-Host "🔍 Verifying architecture..." -ForegroundColor Yellow
+          $arch = $env:PROCESSOR_ARCHITECTURE
+          
+          if ($arch -ne "AMD64") {
+            Write-Host "❌ ERROR: Expected AMD64 (x86_64), got $arch" -ForegroundColor Red
+            exit 1
+          }
+          
+          Write-Host "✅ Architecture verified: x86_64" -ForegroundColor Green
+      
+      # Step: Setup build environment
+      - name: Setup Build Environment
+        shell: powershell
+        run: |
+          Write-Host "🔧 Setting up build environment..." -ForegroundColor Yellow
+          
+          # Create build directory
+          New-Item -ItemType Directory -Force -Path build
+          
+          Write-Host "✅ Build environment ready" -ForegroundColor Green
+      
+      # Step: Build application (simulated)
+      - name: Build Application
+        shell: powershell
+        run: |
+          Write-Host "🔨 Building application..." -ForegroundColor Yellow
+          
+          # Simulate compilation
+          "Binary compiled successfully" | Out-File -FilePath "build\app-windows-x86_64.exe"
+          
+          Write-Host "✅ Build complete" -ForegroundColor Green
+      
+      # Step: Run tests
+      - name: Run Tests
+        shell: powershell
+        run: |
+          Write-Host "🧪 Running tests..." -ForegroundColor Yellow
+          
+          # Simulate test execution
+          Write-Host "Test 1: PASSED ✅" -ForegroundColor Green
+          Write-Host "Test 2: PASSED ✅" -ForegroundColor Green
+          Write-Host "Test 3: PASSED ✅" -ForegroundColor Green
+          
+          Write-Host "✅ All tests passed" -ForegroundColor Green
+      
+      # Step: Upload artifacts
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-x86_64
+          path: build/
+          retention-days: 7
+
+  # ===========================================================================
+  # JOB 4: MACOS BUILD AND TEST
+  # ===========================================================================
+  # Demonstrates: macOS-specific configuration
+  
+  build-macos:
+    name: "Build on macOS (x86_64)"
+    
+    needs: pre-build-validation
+    if: needs.pre-build-validation.outputs.should-build == 'true'
+    
+    # Use macOS runner
+    # Note: GitHub provides both x86_64 and ARM64 (M1) runners
+    # macos-latest typically uses ARM64, macos-13 uses x86_64
+    runs-on: macos-13  # Explicitly use x86_64 runner
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Step: Display macOS environment
+      - name: Display macOS Environment
+        run: |
+          echo "=== macOS Environment ==="
+          echo "OS Version: $(sw_vers -productVersion)"
+          echo "Architecture: $(uname -m)"
+          echo "Processor: $(sysctl -n machdep.cpu.brand_string)"
+          echo "Cores: $(sysctl -n hw.ncpu)"
+      
+      # Step: Verify architecture
+      - name: Verify Architecture
+        run: |
+          echo "🔍 Verifying architecture..."
+          ARCH=$(uname -m)
+          
+          if [ "$ARCH" != "x86_64" ]; then
+            echo "❌ ERROR: Expected x86_64, got $ARCH"
+            exit 1
+          fi
+          
+          echo "✅ Architecture verified: x86_64"
+      
+      # Step: Install dependencies
+      - name: Install Dependencies
+        run: |
+          echo "📦 Installing dependencies..."
+          
+          # Homebrew is pre-installed on GitHub-hosted macOS runners
+          brew --version
+          
+          # Example: Install a package (commented out for demo)
+          # brew install cmake
+          
+          echo "✅ Dependencies ready"
+      
+      # Step: Build application
+      - name: Build Application
+        run: |
+          echo "🔨 Building application..."
+          
+          # Simulate compilation with Clang (default on macOS)
+          mkdir -p build
+          echo "Binary compiled successfully" > build/app-macos-x86_64
+          
+          echo "✅ Build complete"
+      
+      # Step: Run tests
+      - name: Run Tests
+        run: |
+          echo "🧪 Running tests..."
+          
+          # Simulate test execution
+          echo "Test 1: PASSED ✅"
+          echo "Test 2: PASSED ✅"
+          echo "Test 3: PASSED ✅"
+          
+          echo "✅ All tests passed"
+      
+      # Step: Upload artifacts
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build-x86_64
+          path: build/
+          retention-days: 7
+
+  # ===========================================================================
+  # JOB 5: INTEGRATION TESTS (DEPENDS ON ALL BUILDS)
+  # ===========================================================================
+  # This job demonstrates: multiple dependencies and running in series
+  
+  integration-tests:
+    name: "Integration Tests"
+    
+    # This job depends on ALL build jobs completing successfully
+    # It will only run if all three OS builds succeed
+    needs: [build-linux, build-windows, build-macos]
+    
+    # Run on Ubuntu for integration testing
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Step: Download all build artifacts
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: linux-build-*
+          path: artifacts/linux/
+          merge-multiple: true
+      
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build-x86_64
+          path: artifacts/windows/
+      
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build-x86_64
+          path: artifacts/macos/
+      
+      # Step: Verify all artifacts
+      - name: Verify Artifacts
+        run: |
+          echo "🔍 Verifying downloaded artifacts..."
+          
+          echo "Linux artifacts:"
+          ls -la artifacts/linux/
+          
+          echo ""
+          echo "Windows artifacts:"
+          ls -la artifacts/windows/
+          
+          echo ""
+          echo "macOS artifacts:"
+          ls -la artifacts/macos/
+          
+          echo "✅ All artifacts verified"
+      
+      # Step: Run integration tests
+      - name: Run Integration Tests
+        run: |
+          echo "🧪 Running integration tests across all platforms..."
+          
+          # Simulate cross-platform integration tests
+          echo "Integration Test 1: Cross-platform API compatibility ✅"
+          echo "Integration Test 2: Data format consistency ✅"
+          echo "Integration Test 3: End-to-end workflow ✅"
+          
+          echo "✅ Integration tests complete"
+
+  # ===========================================================================
+  # JOB 6: DEPLOYMENT PREPARATION (PARALLEL WITH INTEGRATION TESTS)
+  # ===========================================================================
+  # Demonstrates: parallel job execution and conditional deployment
+  
+  prepare-deployment:
+    name: "Prepare Deployment"
+    
+    # Runs in parallel with integration-tests (both depend on builds)
+    needs: [build-linux, build-windows, build-macos]
+    
+    # Only prepare deployment for main branch
+    if: github.ref == 'refs/heads/main'
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Step: Generate release notes
+      - name: Generate Release Notes
+        run: |
+          echo "📝 Generating release notes..."
+          
+          cat > release-notes.md << EOF
+          # Release Notes
+          
+          **Version:** ${{ needs.pre-build-validation.outputs.full-version }}
+          **Build:** ${{ needs.pre-build-validation.outputs.build-timestamp }}
+          **Branch:** ${{ github.ref_name }}
+          **Commit:** ${{ github.sha }}
+          
+          ## Changes
+          - Multi-platform builds completed successfully
+          - Linux (x86_64): gcc-11, clang-14
+          - Windows (x86_64)
+          - macOS (x86_64)
+          
+          ## Artifacts
+          - linux-build-x86_64-gcc-11
+          - linux-build-x86_64-clang-14
+          - windows-build-x86_64
+          - macos-build-x86_64
+          EOF
+          
+          cat release-notes.md
+          echo "✅ Release notes generated"
+      
+      # Step: Create deployment package
+      - name: Create Deployment Package
+        run: |
+          echo "📦 Creating deployment package..."
+          
+          mkdir -p deployment
+          cp release-notes.md deployment/
+          
+          echo "✅ Deployment package ready"
+      
+      # Step: Upload deployment artifacts
+      - name: Upload Deployment Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: deployment/
+          retention-days: 30
+
+  # ===========================================================================
+  # JOB 7: FINAL SUMMARY (RUNS LAST)
+  # ===========================================================================
+  # Demonstrates: final cleanup and summary job
+  
+  workflow-summary:
+    name: "Workflow Summary"
+    
+    # Depends on both integration tests and deployment preparation
+    # This ensures it runs last, after all other jobs
+    needs: [integration-tests, prepare-deployment]
+    
+    # Use 'always()' to run even if some jobs were skipped
+    # Use 'success()' to run only if all dependencies succeeded
+    if: always()
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step: Display workflow status
+      - name: Display Workflow Status
+        run: |
+          echo "=== Workflow Summary ==="
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Status: ${{ job.status }}"
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo ""
+          echo "=== Job Statuses ==="
+          echo "Integration Tests: ${{ needs.integration-tests.result }}"
+          echo "Deployment Prep: ${{ needs.prepare-deployment.result }}"
+          echo ""
+          
+          # Check overall success
+          if [[ "${{ needs.integration-tests.result }}" == "success" ]]; then
+            echo "✅ All critical jobs completed successfully!"
+          else
+            echo "⚠️  Some jobs did not complete successfully"
+          fi
+      
+      # Step: Conditional notification (example)
+      - name: Success Notification
+        if: needs.integration-tests.result == 'success'
+        run: |
+          echo "🎉 Workflow completed successfully!"
+          echo "All builds, tests, and integration checks passed."
+          # In a real workflow, you might send a Slack/email notification here
+      
+      # Step: Failure notification (example)
+      - name: Failure Notification
+        if: needs.integration-tests.result != 'success'
+        run: |
+          echo "❌ Workflow encountered issues"
+          echo "Check the logs for failed jobs"
+          # In a real workflow, you might send an alert here
+
+# =============================================================================
+# END OF WORKFLOW
+# =============================================================================
+# 
+# KEY CONCEPTS DEMONSTRATED:
+# 
+# 1. WORKFLOW TRIGGERS
+#    - Push events on specific branches
+#    - Pull request events
+#    - Manual workflow dispatch with inputs
+# 
+# 2. CONCURRENCY CONTROL
+#    - Limiting parallel workflow runs
+#    - Cancelling redundant runs
+#    - Max parallel jobs in matrix (2 at a time)
+# 
+# 3. JOB DEPENDENCIES
+#    - Serial execution: pre-build → builds → integration/deployment → summary
+#    - Parallel execution: integration-tests || prepare-deployment
+#    - Multiple dependencies: integration-tests needs all three OS builds
+# 
+# 4. OPERATING SYSTEMS
+#    - Linux (ubuntu-latest) - x86_64
+#    - Windows (windows-latest) - x86_64
+#    - macOS (macos-13) - x86_64 (explicitly selected)
+# 
+# 5. ARCHITECTURE RESTRICTIONS
+#    - All jobs target x86_64 architecture only
+#    - Architecture verification in each build job
+#    - Matrix strategy limited to x86_64 configurations
+# 
+# 6. MATRIX STRATEGY
+#    - Multiple configurations in a single job
+#    - fail-fast: true ensures OS-specific failure handling
+#    - max-parallel: 2 limits concurrent matrix jobs
+# 
+# 7. CONDITIONALS
+#    - Branch-based execution (main, develop, feature/*)
+#    - Job-level conditions (if: needs.*.outputs.*)
+#    - Step-level conditions (if: success(), if: failure())
+# 
+# 8. ARTIFACTS
+#    - Uploading build outputs
+#    - Downloading in dependent jobs
+#    - Retention policies
+# 
+# 9. OUTPUTS
+#    - Job outputs for inter-job communication
+#    - Step outputs using GITHUB_OUTPUT
+# 
+# 10. SHELL OPTIONS
+#     - Bash on Linux/macOS
+#     - PowerShell on Windows
+# 
+# =============================================================================
